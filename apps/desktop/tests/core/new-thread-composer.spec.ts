@@ -134,7 +134,7 @@ test("new thread hides the onboarding notice after picking a thread model", asyn
     await expect(dropdown).not.toContainText("GPT-5");
     await dropdown.getByRole("button", { name: /GPT-4o/ }).click();
 
-    await expect(modelBadge).toHaveText("openai:gpt-4o");
+    await expect(modelBadge).toHaveText("GPT-4o");
     await expect(startButton).toBeEnabled();
     await expect(notice).toHaveCount(0);
 

@@ -724,7 +724,6 @@ export default function App() {
   useEffect(() => {
     const removeWorkspacePickedListener = window.piApp?.onWorkspacePicked?.((workspaceId) => {
       newThread.setPendingWorkspaceId(workspaceId);
-      newThread.resetSurface();
     });
     const removeClipboardImageListener = window.piApp?.onClipboardImagePasted?.(
       handlePastedClipboardImage,
@@ -986,6 +985,10 @@ export default function App() {
               workspaceId ?? selectedWorkspace?.rootWorkspaceId ?? selectedWorkspace?.id,
             )
           }
+          newThreadDrafts={newThread.drafts}
+          activeDraftId={snapshot.activeView === "new-thread" ? newThread.activeDraftId : undefined}
+          onOpenDraft={newThread.openDraft}
+          onDiscardDraft={newThread.discardDraft}
           onSetActiveView={setActiveView}
           onOpenSkills={openSkills}
           onOpenExtensions={openExtensions}
@@ -1109,10 +1112,7 @@ export default function App() {
                 onChangePrompt={newThread.setPrompt}
                 onSelectEnvironment={newThread.setEnvironment}
                 onSelectWorkspace={newThread.selectWorkspace}
-                onSetModel={(provider, modelId) => {
-                  newThread.setProvider(provider);
-                  newThread.setModelId(modelId);
-                }}
+                onSetModel={newThread.setModel}
                 onSetThinking={newThread.setThinkingLevel}
                 extensionFlags={newThread.extensionFlags}
                 onSetExtensionFlag={newThread.setExtensionFlag}

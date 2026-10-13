@@ -21,7 +21,8 @@
   max-width: 100%;
 }
 
-.model-selector__badge {
+.model-selector__badge,
+.new-thread__environment-toggle {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -44,7 +45,8 @@
     color var(--motion-base) var(--ease-out);
 }
 
-.model-selector__badge:hover:not(:disabled) {
+.model-selector__badge:hover:not(:disabled),
+.new-thread__environment-toggle:hover {
   background: var(--overlay-hover);
   border-color: var(--border-heavy);
   color: var(--text-strong);

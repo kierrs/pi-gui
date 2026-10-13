@@ -1,6 +1,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
@@ -14,7 +15,7 @@ import type {
   WorkspaceRecord,
 } from "../../../contracts/desktop-state";
 import type { MentionOption } from "../conversation/hooks/use-mention-menu";
-import { ArrowUpIcon, PiLogoMark, PlusIcon } from "../../ui/icons";
+import { ArrowUpIcon, ChevronDownIcon, PiLogoMark, PlusIcon } from "../../ui/icons";
 import {
   MODEL_OPTIONS_EMPTY_TITLE,
   type ComposerSlashCommand,
@@ -292,22 +293,7 @@ function NewThreadComposerFooter({
       <div className="composer__footer">
         <div className="composer__footer-row">
           <div className="composer__hint new-thread__hint">
-            <div className="new-thread__environment-group">
-              <button
-                className={`new-thread__environment ${environment === "local" ? "new-thread__environment--active" : ""}`}
-                type="button"
-                onClick={() => onSelectEnvironment("local")}
-              >
-                <span>Local</span>
-              </button>
-              <button
-                className={`new-thread__environment ${environment === "worktree" ? "new-thread__environment--active" : ""}`}
-                type="button"
-                onClick={() => onSelectEnvironment("worktree")}
-              >
-                <span>Worktree</span>
-              </button>
-            </div>
+            <EnvironmentSelector environment={environment} onSelect={onSelectEnvironment} />
             <span className="new-thread__hint-separator">·</span>
             <ModelSelector
               runtime={runtime}
@@ -364,5 +350,81 @@ function NewThreadComposerFooter({
         </div>
       </div>
     </>
+  );
+}
+
+const ENVIRONMENT_OPTIONS: readonly {
+  readonly value: NewThreadEnvironment;
+  readonly label: string;
+}[] = [
+  { value: "local", label: "Local" },
+  { value: "worktree", label: "Worktree" },
+];
+
+function EnvironmentSelector({
+  environment,
+  onSelect,
+}: {
+  readonly environment: NewThreadEnvironment;
+  readonly onSelect: (environment: NewThreadEnvironment) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const current = ENVIRONMENT_OPTIONS.find((option) => option.value === environment);
+  return (
+    <span className="model-selector__anchor" ref={containerRef}>
+      <button
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="new-thread__environment-toggle"
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+      >
+        {current?.label}
+        <ChevronDownIcon />
+      </button>
+      {open ? (
+        <div
+          className="model-selector__dropdown model-selector__dropdown--below new-thread__environment-menu"
+          role="menu"
+        >
+          {ENVIRONMENT_OPTIONS.map((option) => {
+            const isActive = option.value === environment;
+            return (
+              <button
+                className={`model-selector__item${isActive ? " model-selector__item--active" : ""}`}
+                key={option.value}
+                role="menuitemradio"
+                aria-checked={isActive}
+                type="button"
+                onClick={() => {
+                  onSelect(option.value);
+                  setOpen(false);
+                }}
+              >
+                <span className="model-selector__item-label">{option.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </span>
   );
 }

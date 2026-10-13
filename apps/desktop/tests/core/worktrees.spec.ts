@@ -103,8 +103,13 @@ test("creates and selects a worktree-backed workspace from the desktop UI", asyn
       .getByRole("button", { name: "New thread", exact: true })
       .click();
     await expect(window.getByTestId("new-thread-composer")).toBeVisible();
-    await expect(window.getByRole("button", { name: "Local", exact: true })).toBeVisible();
-    await expect(window.getByRole("button", { name: "Worktree", exact: true })).toBeVisible();
+    const environmentToggle = window.locator(".new-thread__environment-toggle");
+    await expect(environmentToggle).toHaveText("Local");
+    await environmentToggle.click();
+    await expect(window.getByRole("menuitemradio", { name: "Local", exact: true })).toBeVisible();
+    await expect(
+      window.getByRole("menuitemradio", { name: "Worktree", exact: true }),
+    ).toBeVisible();
   } finally {
     await harness.close();
   }

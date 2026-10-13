@@ -1848,6 +1848,17 @@ export async function expectNewThreadWorkspace(window: Page, workspacePath: stri
   await expect(window.locator(".new-thread__workspace")).toHaveValue(workspace.id);
 }
 
+/** Picks Local or Worktree from the New thread environment toggle. */
+export async function selectNewThreadEnvironment(
+  window: Page,
+  environment: NewThreadEnvironment,
+): Promise<void> {
+  const label = environment === "worktree" ? "Worktree" : "Local";
+  await window.locator(".new-thread__environment-toggle").click();
+  await window.getByRole("menuitemradio", { name: label, exact: true }).click();
+  await expect(window.locator(".new-thread__environment-toggle")).toHaveText(label);
+}
+
 export async function startThreadFromSurface(
   window: Page,
   options: {
@@ -1862,11 +1873,7 @@ export async function startThreadFromSurface(
   if (workspaceName) {
     await window.locator(".new-thread__workspace").selectOption({ label: workspaceName });
   }
-  if (environment === "worktree") {
-    await window.getByRole("button", { name: "Worktree", exact: true }).click();
-  } else {
-    await window.getByRole("button", { name: "Local", exact: true }).click();
-  }
+  await selectNewThreadEnvironment(window, environment);
   const startButton = window.getByRole("button", { name: "Start thread" });
   if (prompt) {
     await window.getByLabel("New thread prompt").fill(prompt);

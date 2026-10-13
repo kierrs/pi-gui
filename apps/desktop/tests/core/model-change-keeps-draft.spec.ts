@@ -37,9 +37,9 @@ test("changing model or thinking from the composer footer keeps the typed prompt
     // Wait until the draft is saved, so the picker's state update is not masked by a pending edit.
     await expect.poll(async () => (await getDesktopState(window)).composerDraft).toBe(prompt);
 
-    await footer.getByRole("button", { name: "openai:gpt-5" }).click();
+    await footer.getByRole("button", { name: "GPT-5", exact: true }).click();
     await footer.getByRole("button", { name: "GPT-4o" }).click();
-    await expect(footer.getByRole("button", { name: "openai:gpt-4o" })).toBeVisible();
+    await expect(footer.getByRole("button", { name: "GPT-4o", exact: true })).toBeVisible();
     await expect(window.getByTestId("transcript")).toContainText("Model set to openai:gpt-4o");
     await expect(composer).toHaveValue(prompt);
     await expect(attachment).toHaveCount(1);
@@ -63,7 +63,7 @@ test("changing model or thinking from the composer footer keeps the typed prompt
     await expect(window.getByTestId("transcript")).toContainText("Model set to openai:gpt-5");
     // The cleared draft is saved before the model changes, not after the typing debounce.
     expect((await getDesktopState(window)).composerDraft).toBe("");
-    await expect(footer.getByRole("button", { name: "openai:gpt-5" })).toBeVisible();
+    await expect(footer.getByRole("button", { name: "GPT-5", exact: true })).toBeVisible();
     await expect(composer).toHaveValue("");
     await expect.poll(async () => (await getDesktopState(window)).composerDraft).toBe("");
     await expect(composer).toHaveValue("");

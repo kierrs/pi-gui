@@ -100,6 +100,17 @@
   color: var(--text-strong);
 }
 
+/* New thread environment: one toggle styled like the model picker badge (model-selector-panel.css). */
+.new-thread__environment-toggle svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.new-thread__environment-menu {
+  min-width: 160px;
+}
+
 .new-thread__textarea {
   min-height: 100px;
   resize: vertical;
