@@ -9,12 +9,9 @@ interface ContextMeterProps {
   readonly usage: SessionUsageSnapshot | undefined;
 }
 
-const RING_RADIUS = 6;
-const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-
 /**
- * Codex-style context ring beside the model picker. Hovering or focusing it
- * opens a card with pi's context, prompt-cache, plan-limit and thread usage.
+ * Context usage and thread cost as text beside the model picker. Hovering or focusing
+ * it opens a card with pi's context, prompt-cache, plan-limit and thread usage.
  */
 export function ContextMeter({ usage }: ContextMeterProps) {
   const [open, setOpen] = useState(false);
@@ -26,10 +23,20 @@ export function ContextMeter({ usage }: ContextMeterProps) {
   const percent = context.tokens === null ? null : (context.tokens / context.contextWindow) * 100;
   const tone =
     percent === null ? "unknown" : percent > 90 ? "danger" : percent > 70 ? "warning" : "normal";
-  const label =
+  const cost = usage.subscription ? undefined : formatCost(usage.totals.cost);
+  const windowSize = formatTokens(context.contextWindow);
+  const text = [
+    ...(context.tokens === null || percent === null
+      ? [`— / ${windowSize}`]
+      : [formatPercent(percent), `${formatTokens(context.tokens)} / ${windowSize}`]),
+    ...(cost ? [cost] : []),
+  ].join(" · ");
+  const label = [
     percent === null
       ? "Context window: usage unknown until the next reply"
-      : `Context window: ${formatPercent(percent)} used`;
+      : `Context window: ${formatPercent(percent)} used`,
+    ...(cost ? [`thread cost ${cost}`] : []),
+  ].join(", ");
 
   return (
     <div
@@ -39,7 +46,7 @@ export function ContextMeter({ usage }: ContextMeterProps) {
     >
       <button
         type="button"
-        className="context-meter__ring"
+        className="context-meter__trigger"
         data-tone={tone}
         aria-label={label}
         aria-describedby={open ? cardId : undefined}
@@ -49,17 +56,7 @@ export function ContextMeter({ usage }: ContextMeterProps) {
           if (event.key === "Escape") setOpen(false);
         }}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-          <circle className="context-meter__track" cx="8" cy="8" r={RING_RADIUS} />
-          <circle
-            className="context-meter__fill"
-            cx="8"
-            cy="8"
-            r={RING_RADIUS}
-            strokeDasharray={`${(Math.min(percent ?? 0, 100) / 100) * RING_CIRCUMFERENCE} ${RING_CIRCUMFERENCE}`}
-            transform="rotate(-90 8 8)"
-          />
-        </svg>
+        {text}
       </button>
       {open ? (
         <div className="context-meter__card" id={cardId} role="tooltip">
@@ -114,7 +111,7 @@ export function ContextMeter({ usage }: ContextMeterProps) {
             />
             <Row
               label="Cost"
-              value={usage.subscription ? "Subscription" : `$${usage.totals.cost.toFixed(2)}`}
+              value={usage.subscription ? "Subscription" : formatCost(usage.totals.cost)}
             />
           </section>
         </div>
@@ -192,6 +189,10 @@ function formatTokens(count: number): string {
   }
   if (count >= 1000) return `${Math.round(count / 1000)}k`;
   return String(count);
+}
+
+function formatCost(cost: number): string {
+  return `$${cost.toFixed(2)}`;
 }
 
 function formatPercent(value: number): string {

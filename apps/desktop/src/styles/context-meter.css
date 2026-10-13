@@ -1,5 +1,5 @@
 /* =============================================================================
- * Context meter — ring beside the model picker and its hover card.
+ * Context meter — usage and cost text beside the model picker, and its hover card.
  * Modelled on Codex's context-window hover and Claude's usage-limit hover.
  * ========================================================================== */
 
@@ -9,52 +9,38 @@
   align-items: center;
 }
 
-.context-meter__ring {
+.context-meter__trigger {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
+  min-height: 28px;
+  padding: 4px 6px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   cursor: default;
   transition: background var(--motion-base) var(--ease-out);
 }
 
-.context-meter__ring:hover,
-.context-meter__ring:focus-visible {
+.context-meter__trigger:hover,
+.context-meter__trigger:focus-visible {
   background: var(--overlay-hover);
 }
 
-.context-meter__ring:focus-visible {
+.context-meter__trigger:focus-visible {
   outline: none;
   border-color: var(--focus-ring-border);
 }
 
-.context-meter__track,
-.context-meter__fill {
-  fill: none;
-  stroke-width: 2.2;
+.context-meter__trigger[data-tone="warning"] {
+  color: var(--warning);
 }
 
-.context-meter__track {
-  stroke: var(--border-heavy);
-}
-
-.context-meter__fill {
-  stroke: var(--muted-strong);
-  stroke-linecap: round;
-  transition: stroke-dasharray var(--motion-base) var(--ease-out);
-}
-
-.context-meter__ring[data-tone="warning"] .context-meter__fill {
-  stroke: var(--warning);
-}
-
-.context-meter__ring[data-tone="danger"] .context-meter__fill {
-  stroke: var(--error);
+.context-meter__trigger[data-tone="danger"] {
+  color: var(--error);
 }
 
 .context-meter__card {
