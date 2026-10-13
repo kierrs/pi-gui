@@ -43,7 +43,7 @@ test("switches between app-global and per-repo model scope while worktrees inher
     });
     await expect(window.locator(".chat-header__title")).toHaveText("Repo A global session");
     await expectComposerModelState(window, {
-      activeModel: "openai:gpt-5",
+      activeModel: "GPT-5",
       visibleModelLabels: ["GPT-5", "GPT-4o"],
       hiddenModelLabels: ["GPT-4 Turbo"],
     });
@@ -53,7 +53,7 @@ test("switches between app-global and per-repo model scope while worktrees inher
     });
     await expect(window.locator(".chat-header__title")).toHaveText("Repo B global session");
     await expectComposerModelState(window, {
-      activeModel: "openai:gpt-5",
+      activeModel: "GPT-5",
       visibleModelLabels: ["GPT-5", "GPT-4o"],
       hiddenModelLabels: ["GPT-4 Turbo"],
     });
@@ -85,7 +85,7 @@ test("switches between app-global and per-repo model scope while worktrees inher
     await window.getByRole("button", { name: "Back to app", exact: true }).click();
     await selectSession(window, "Repo B global session");
     await expectComposerModelState(window, {
-      activeModel: "openai:gpt-5",
+      activeModel: "GPT-5",
       visibleModelLabels: ["GPT-5", "GPT-4o"],
       hiddenModelLabels: ["GPT-4 Turbo"],
     });
@@ -99,7 +99,7 @@ test("switches between app-global and per-repo model scope while worktrees inher
     });
     await expect(window.locator(".chat-header__title")).toHaveText("New thread");
     await expectComposerModelState(window, {
-      activeModel: "openai:gpt-4o",
+      activeModel: "GPT-4o",
       visibleModelLabels: ["GPT-4o", "GPT-4 Turbo"],
       hiddenModelLabels: ["GPT-5"],
     });
@@ -107,7 +107,7 @@ test("switches between app-global and per-repo model scope while worktrees inher
     await openNewThread(window);
     await expect(window.locator(".new-thread__workspace")).toHaveValue(rootWorkspaceA.id);
     await expectNewThreadModelState(window, {
-      activeModel: "openai:gpt-4o",
+      activeModel: "GPT-4o",
       visibleModelLabels: ["GPT-4o", "GPT-4 Turbo"],
       hiddenModelLabels: ["GPT-5"],
     });
@@ -115,7 +115,9 @@ test("switches between app-global and per-repo model scope while worktrees inher
     await expect(window.getByTestId("new-thread-composer")).toHaveCount(0);
 
     await selectComposerModel(window, "GPT-4 Turbo");
-    await expect(window.getByRole("button", { name: "openai:gpt-4-turbo" }).first()).toBeVisible();
+    await expect(window.locator(".composer__bar .model-selector__badge").first()).toHaveText(
+      "GPT-4 Turbo",
+    );
 
     await openSettings(window);
     await openSettingsSection(window, "Models");
@@ -130,7 +132,9 @@ test("switches between app-global and per-repo model scope while worktrees inher
     await expect(window.getByLabel("Default model", { exact: true })).toHaveValue("openai:gpt-5");
 
     await window.getByRole("button", { name: "Back to app", exact: true }).click();
-    await expect(window.getByRole("button", { name: "openai:gpt-4-turbo" }).first()).toBeVisible();
+    await expect(window.locator(".composer__bar .model-selector__badge").first()).toHaveText(
+      "GPT-4 Turbo",
+    );
     await expectComposerModelOptions(window, {
       visibleModelLabels: ["GPT-5", "GPT-4 Turbo"],
       hiddenModelLabels: ["GPT-4o"],
@@ -192,9 +196,9 @@ async function expectComposerModelState(
     readonly hiddenModelLabels: readonly string[];
   },
 ): Promise<void> {
-  await expect(
-    window.getByRole("button", { name: expectations.activeModel }).first(),
-  ).toBeVisible();
+  await expect(window.locator(".composer__bar .model-selector__badge").first()).toHaveText(
+    expectations.activeModel,
+  );
   await expectModelOptions(window, ".composer__bar", expectations);
 }
 
@@ -216,9 +220,9 @@ async function expectNewThreadModelState(
     readonly hiddenModelLabels: readonly string[];
   },
 ): Promise<void> {
-  await expect(
-    window.getByRole("button", { name: expectations.activeModel }).first(),
-  ).toBeVisible();
+  await expect(window.locator(".new-thread__hint .model-selector__badge").first()).toHaveText(
+    expectations.activeModel,
+  );
   await expectModelOptions(window, ".new-thread__hint", expectations);
 }
 

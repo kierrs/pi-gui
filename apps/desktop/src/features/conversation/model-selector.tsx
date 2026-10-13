@@ -60,7 +60,8 @@ export function ModelSelector({
   const shouldRenderModelControl = hasModelControl || showEmptyModelControl;
   const modelBadgeLabel =
     provider && modelId
-      ? `${provider}:${modelId}`
+      ? (runtime?.models.find((model) => model.providerId === provider && model.modelId === modelId)
+          ?.label ?? `${provider}:${modelId}`)
       : hasAvailableModelOptions
         ? unselectedModelLabel
         : emptyModelLabel;
