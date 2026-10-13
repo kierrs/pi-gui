@@ -62,24 +62,91 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
   } = params;
 
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState("");
-  const [rootWorkspaceId, setRootWorkspaceId] = useState("");
-  const [environment, setEnvironment] = useState<NewThreadEnvironment>("local");
-  const [prompt, setPrompt] = useState("");
-  const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>([]);
-  const [provider, setProvider] = useState<string | undefined>();
-  const [modelId, setModelId] = useState<string | undefined>();
-  const [thinkingLevel, setThinkingLevel] = useState<string | undefined>();
-  // Flag edits on this surface, laid over the workspace's remembered defaults.
-  const [extensionFlagEdits, setExtensionFlagEdits] = useState<ExtensionFlagValues>({});
-  const [composerError, setComposerError] = useState<string | undefined>();
+  // Unsent New thread surfaces, newest first. They live in this window's memory only.
+  const [drafts, setDrafts] = useState<readonly NewThreadDraft[]>([]);
+  const draftsRef = useRef<readonly NewThreadDraft[]>([]);
+  const [activeDraftId, setActiveDraftIdState] = useState("");
+  const activeDraftIdRef = useRef("");
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const previousActiveViewRef = useRef<AppView | null>(null);
   // Set while an in-app open is switching to New thread, so its chosen folder
   // is not replaced by the selected one when the view change arrives.
   const openedInAppRef = useRef(false);
+  // Drafts whose start is in flight, so a second Enter or click cannot start them twice.
+  const startingDraftIdsRef = useRef(new Set<string>());
+
+  // Updates go through refs so several in one event (or an async completion) see the latest list.
+  const updateDrafts = useCallback(
+    (update: (current: readonly NewThreadDraft[]) => readonly NewThreadDraft[]) => {
+      const next = update(draftsRef.current);
+      if (next === draftsRef.current) return;
+      draftsRef.current = next;
+      setDrafts(next);
+    },
+    [],
+  );
+  const updateDraft = useCallback(
+    (draftId: string, update: (draft: NewThreadDraft) => NewThreadDraft) => {
+      updateDrafts((current) =>
+        current.some((draft) => draft.id === draftId)
+          ? current.map((draft) => (draft.id === draftId ? update(draft) : draft))
+          : current,
+      );
+    },
+    [updateDrafts],
+  );
+  const setActiveDraftId = useCallback((draftId: string) => {
+    activeDraftIdRef.current = draftId;
+    setActiveDraftIdState(draftId);
+  }, []);
+  // The folder the surface shows when no draft is open (for example after its folder was removed).
+  const fallbackRootWorkspaceIdRef = useRef("");
+  const updateActiveDraft = useCallback(
+    (update: (draft: NewThreadDraft) => NewThreadDraft) => {
+      if (
+        !draftsRef.current.some((entry) => entry.id === activeDraftIdRef.current) &&
+        fallbackRootWorkspaceIdRef.current
+      ) {
+        // An edit always lands in a draft, so the surface is never inert.
+        const created = createDraft(fallbackRootWorkspaceIdRef.current);
+        updateDrafts((current) => [created, ...current]);
+        setActiveDraftId(created.id);
+      }
+      updateDraft(activeDraftIdRef.current, update);
+    },
+    [setActiveDraftId, updateDraft, updateDrafts],
+  );
+
+  /** Opens the folder's empty draft, or adds a new one, and makes it the active draft. */
+  const openFolderDraft = useCallback(
+    (rootWorkspaceId: string) => {
+      const empty = draftsRef.current.find(
+        (draft) => draft.rootWorkspaceId === rootWorkspaceId && isEmptyDraft(draft),
+      );
+      if (empty) {
+        setActiveDraftId(empty.id);
+        return;
+      }
+      const draft = createDraft(rootWorkspaceId);
+      updateDrafts((current) => [draft, ...current]);
+      setActiveDraftId(draft.id);
+    },
+    [setActiveDraftId, updateDrafts],
+  );
+
+  const draft = drafts.find((entry) => entry.id === activeDraftId);
+  const rootWorkspaceId = draft?.rootWorkspaceId ?? "";
+  const environment = draft?.environment ?? "local";
+  const prompt = draft?.prompt ?? "";
+  const attachments = draft?.attachments ?? NO_ATTACHMENTS;
+  const provider = draft?.provider;
+  const modelId = draft?.modelId;
+  const thinkingLevel = draft?.thinkingLevel;
+  const composerError = draft?.error;
 
   const workspace =
     rootWorkspaceOptions.find((entry) => entry.id === rootWorkspaceId) ?? rootWorkspaceOptions[0];
+  fallbackRootWorkspaceIdRef.current = workspace?.id ?? "";
   const runtime = snapshot ? getEffectiveModelRuntime(snapshot, workspace) : undefined;
   const defaultEnabled = buildModelOptions(runtime).some(
     (m) =>
@@ -94,13 +161,20 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
   const workspaceFlagDefaults = workspace
     ? snapshot?.extensionFlagsByWorkspace[workspace.id]
     : undefined;
+  const extensionFlagEdits = draft?.extensionFlagEdits;
   const extensionFlags = useMemo(
     () => ({ ...workspaceFlagDefaults, ...extensionFlagEdits }),
     [workspaceFlagDefaults, extensionFlagEdits],
   );
-  const setExtensionFlag = useCallback((name: string, value: boolean | string) => {
-    setExtensionFlagEdits((current) => ({ ...current, [name]: value }));
-  }, []);
+  const setExtensionFlag = useCallback(
+    (name: string, value: boolean | string) => {
+      updateActiveDraft((current) => ({
+        ...current,
+        extensionFlagEdits: { ...current.extensionFlagEdits, [name]: value },
+      }));
+    },
+    [updateActiveDraft],
+  );
   const modelOnboarding = deriveModelOnboardingState(runtime, {
     provider: resolvedProvider,
     modelId: resolvedModelId,
@@ -112,108 +186,182 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
     });
   }, []);
 
-  const updatePrompt = useCallback((value: SetStateAction<string>) => {
-    setComposerError(undefined);
-    setPrompt(value);
-  }, []);
+  const setComposerError = useCallback(
+    (error: string | undefined) => updateActiveDraft((current) => ({ ...current, error })),
+    [updateActiveDraft],
+  );
+
+  const setPrompt = useCallback(
+    (value: SetStateAction<string>) => {
+      updateActiveDraft((current) => ({
+        ...current,
+        prompt: typeof value === "function" ? value(current.prompt) : value,
+      }));
+    },
+    [updateActiveDraft],
+  );
+
+  const updatePrompt = useCallback(
+    (value: SetStateAction<string>) => {
+      updateActiveDraft((current) => ({
+        ...current,
+        error: undefined,
+        prompt: typeof value === "function" ? value(current.prompt) : value,
+      }));
+    },
+    [updateActiveDraft],
+  );
+
+  const appendAttachmentsToDraft = useCallback(
+    (draftId: string, added: readonly ComposerAttachment[]) => {
+      updateDraft(draftId, (current) => {
+        const accepted = acceptComposerAttachments(current.attachments, added);
+        if (!accepted.ok) {
+          return { ...current, error: accepted.error.message };
+        }
+        return {
+          ...current,
+          error: undefined,
+          attachments: [...current.attachments, ...accepted.attachments],
+        };
+      });
+    },
+    [updateDraft],
+  );
 
   const addAttachments = useCallback(
     (files: File[]) => {
+      // Files are read asynchronously; they belong to the draft they were added to.
+      const draftId = activeDraftIdRef.current;
       void readComposerAttachmentsFromFiles(files, attachments)
         .then((added) => {
-          if (added.length === 0) {
-            return;
-          }
-          setAttachments((current) => {
-            const accepted = acceptComposerAttachments(current, added);
-            if (!accepted.ok) {
-              setComposerError(accepted.error.message);
-              return current;
-            }
-            setComposerError(undefined);
-            return [...current, ...accepted.attachments];
-          });
+          if (added.length > 0) appendAttachmentsToDraft(draftId, added);
         })
         .catch((error: unknown) => {
-          setComposerError(error instanceof Error ? error.message : String(error));
+          updateDraft(draftId, (current) => ({
+            ...current,
+            error: error instanceof Error ? error.message : String(error),
+          }));
         });
     },
-    [attachments],
+    [appendAttachmentsToDraft, attachments, updateDraft],
   );
 
-  const removeAttachment = useCallback((attachmentId: string) => {
-    setAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
-  }, []);
-
-  const appendAttachment = useCallback((attachment: ComposerAttachment) => {
-    setAttachments((current) => {
-      const accepted = acceptComposerAttachments(current, [attachment]);
-      if (!accepted.ok) {
-        setComposerError(accepted.error.message);
-        return current;
-      }
-      setComposerError(undefined);
-      return [...current, ...accepted.attachments];
-    });
-  }, []);
-
-  // Each fresh New thread surface gets a generation, so a start still in flight from an
-  // earlier surface neither blocks nor clears what the user types into this one.
-  const surfaceGenerationRef = useRef(0);
-  const startingGenerationRef = useRef<number | undefined>(undefined);
-  const resetSurface = useCallback(
-    (workspaceId?: string) => {
-      surfaceGenerationRef.current += 1;
-      const nextWorkspaceId =
-        (workspaceId &&
-          (rootWorkspaceOptions.find((w) => w.id === workspaceId)?.id ||
-            (snapshot ? resolveRepoWorkspaceId(snapshot.workspaces, workspaceId) : undefined))) ||
-        rootWorkspace?.id ||
-        visibleWorkspaces[0]?.id ||
-        "";
-      if (nextWorkspaceId) {
-        setRootWorkspaceId(nextWorkspaceId);
-      }
-      setEnvironment("local");
-      setPrompt("");
-      setAttachments([]);
-      setProvider(undefined);
-      setModelId(undefined);
-      setThinkingLevel(undefined);
-      setExtensionFlagEdits({});
-      setComposerError(undefined);
+  const removeAttachment = useCallback(
+    (attachmentId: string) => {
+      updateActiveDraft((current) => ({
+        ...current,
+        attachments: current.attachments.filter((attachment) => attachment.id !== attachmentId),
+      }));
     },
+    [updateActiveDraft],
+  );
+
+  const appendAttachment = useCallback(
+    (attachment: ComposerAttachment) => {
+      appendAttachmentsToDraft(activeDraftIdRef.current, [attachment]);
+    },
+    [appendAttachmentsToDraft],
+  );
+
+  const resolveRootWorkspaceId = useCallback(
+    (workspaceId?: string) =>
+      (workspaceId &&
+        (rootWorkspaceOptions.find((w) => w.id === workspaceId)?.id ||
+          (snapshot ? resolveRepoWorkspaceId(snapshot.workspaces, workspaceId) : undefined))) ||
+      rootWorkspace?.id ||
+      visibleWorkspaces[0]?.id ||
+      "",
     [rootWorkspace?.id, rootWorkspaceOptions, snapshot, visibleWorkspaces],
   );
+
+  const showNewThreadView = useCallback(() => {
+    openedInAppRef.current = true;
+    if (api) {
+      void updateSnapshot(setSnapshot, () => api.setActiveView("new-thread")).catch(
+        (error: unknown) => {
+          console.error("[renderer] setActiveView failed", error);
+        },
+      );
+    }
+  }, [api, setSnapshot]);
 
   const openSurface = useCallback(
     (workspaceId?: string) => {
       // Save the outgoing conversation before the new-thread flow can change its selection.
       flushComposerDraft();
       setPendingWorkspaceId("");
-      resetSurface(workspaceId);
-      openedInAppRef.current = true;
-      if (api) {
-        void updateSnapshot(setSnapshot, () => api.setActiveView("new-thread")).catch(
+      const nextRootWorkspaceId = resolveRootWorkspaceId(workspaceId);
+      if (nextRootWorkspaceId) {
+        openFolderDraft(nextRootWorkspaceId);
+      }
+      showNewThreadView();
+    },
+    [flushComposerDraft, openFolderDraft, resolveRootWorkspaceId, showNewThreadView],
+  );
+
+  const openDraft = useCallback(
+    (draftId: string) => {
+      if (!draftsRef.current.some((entry) => entry.id === draftId)) return;
+      flushComposerDraft();
+      setPendingWorkspaceId("");
+      setActiveDraftId(draftId);
+      showNewThreadView();
+    },
+    [flushComposerDraft, setActiveDraftId, showNewThreadView],
+  );
+
+  const discardDraft = useCallback(
+    (draftId: string) => {
+      updateDrafts((current) => current.filter((entry) => entry.id !== draftId));
+      if (activeDraftIdRef.current !== draftId) return;
+      setActiveDraftId("");
+      if (api && snapshot?.activeView === "new-thread") {
+        void updateSnapshot(setSnapshot, () => api.setActiveView("threads")).catch(
           (error: unknown) => {
             console.error("[renderer] setActiveView failed", error);
           },
         );
       }
     },
-    [api, flushComposerDraft, resetSurface, setSnapshot],
+    [api, setActiveDraftId, setSnapshot, snapshot?.activeView, updateDrafts],
   );
 
-  const selectWorkspace = useCallback((workspaceId: string) => {
-    setPendingWorkspaceId("");
-    setRootWorkspaceId(workspaceId);
-    setAttachments([]);
-    setProvider(undefined);
-    setModelId(undefined);
-    setThinkingLevel(undefined);
-    setExtensionFlagEdits({});
-    setComposerError(undefined);
-  }, []);
+  const selectWorkspace = useCallback(
+    (workspaceId: string) => {
+      setPendingWorkspaceId("");
+      updateActiveDraft((current) => ({
+        ...current,
+        rootWorkspaceId: workspaceId,
+        attachments: [],
+        provider: undefined,
+        modelId: undefined,
+        thinkingLevel: undefined,
+        extensionFlagEdits: {},
+        error: undefined,
+      }));
+    },
+    [updateActiveDraft],
+  );
+
+  const setEnvironment = useCallback(
+    (nextEnvironment: NewThreadEnvironment) =>
+      updateActiveDraft((current) => ({ ...current, environment: nextEnvironment })),
+    [updateActiveDraft],
+  );
+  const setModel = useCallback(
+    (nextProvider: string, nextModelId: string) =>
+      updateActiveDraft((current) => ({
+        ...current,
+        provider: nextProvider,
+        modelId: nextModelId,
+      })),
+    [updateActiveDraft],
+  );
+  const setThinkingLevel = useCallback(
+    (level: string) => updateActiveDraft((current) => ({ ...current, thinkingLevel: level })),
+    [updateActiveDraft],
+  );
 
   const slashMenu = useSlashMenu({
     composerDraft: prompt,
@@ -222,7 +370,7 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
     selectedModelRuntime: runtime,
     sessionCommands: [],
     commandCompatibility: [],
-    selectedSessionKey: `new-thread:${workspace?.id ?? ""}`,
+    selectedSessionKey: `new-thread:${activeDraftId}`,
     selectedSession: undefined,
     selectedWorkspace: workspace,
     isRunning: false,
@@ -233,10 +381,7 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
     updateSnapshot,
     allowTreeCommand: false,
     immediateCommandMode: "prefill",
-    onSelectModelOption: (nextProvider, nextModelId) => {
-      setProvider(nextProvider);
-      setModelId(nextModelId);
-    },
+    onSelectModelOption: setModel,
     onSelectThinkingOption: setThinkingLevel,
     onSelectLoginProvider: (providerId) => {
       if (!api || !workspace) {
@@ -283,10 +428,10 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
   });
 
   const startThread = useCallback(() => {
-    // The prompt clears only once the thread exists, so a second Enter or click before
-    // then would otherwise start the same thread again (a worktree start takes seconds).
-    const generation = surfaceGenerationRef.current;
-    if (!api || startingGenerationRef.current === generation) {
+    // The draft stays until the thread exists, so a second Enter or click before then
+    // would otherwise start the same thread again (a worktree start takes seconds).
+    const draftId = activeDraftIdRef.current;
+    if (!api || !draftId || startingDraftIdsRef.current.has(draftId)) {
       return;
     }
     if (!rootWorkspaceId || (!prompt.trim() && attachments.length === 0)) {
@@ -314,27 +459,21 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
       thinkingLevel: resolvedThinkingLevel,
       ...(Object.keys(extensionFlags).length > 0 ? { extensionFlags } : {}),
     };
-    startingGenerationRef.current = generation;
+    startingDraftIdsRef.current.add(draftId);
     void updateSnapshot(setSnapshot, () => api.startThread(input))
       .then(() => {
-        if (surfaceGenerationRef.current !== generation) {
-          return;
-        }
-        setPrompt("");
-        setAttachments([]);
-        setProvider(undefined);
-        setModelId(undefined);
-        setThinkingLevel(undefined);
-        setExtensionFlagEdits({});
-        setEnvironment("local");
+        // The real thread replaces its draft row.
+        updateDrafts((current) => current.filter((entry) => entry.id !== draftId));
+        if (activeDraftIdRef.current === draftId) setActiveDraftId("");
       })
       .catch((error: unknown) => {
-        setComposerError(error instanceof Error ? error.message : String(error));
+        updateDraft(draftId, (current) => ({
+          ...current,
+          error: error instanceof Error ? error.message : String(error),
+        }));
       })
       .finally(() => {
-        if (startingGenerationRef.current === generation) {
-          startingGenerationRef.current = undefined;
-        }
+        startingDraftIdsRef.current.delete(draftId);
       });
   }, [
     api,
@@ -347,7 +486,11 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
     resolvedProvider,
     resolvedThinkingLevel,
     rootWorkspaceId,
+    setActiveDraftId,
+    setComposerError,
     setSnapshot,
+    updateDraft,
+    updateDrafts,
   ]);
 
   const handleComposerPaste = useCallback(
@@ -421,20 +564,16 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
     ],
   );
 
+  // Drafts of a folder that is no longer listed are dropped.
   useEffect(() => {
-    if (rootWorkspaceOptions.length === 0) {
-      setPendingWorkspaceId("");
-      setRootWorkspaceId("");
-      setEnvironment("local");
-      setAttachments([]);
-      return;
-    }
-    setRootWorkspaceId((current) =>
-      rootWorkspaceOptions.some((w) => w.id === current)
+    if (!snapshot) return;
+    const listed = new Set(rootWorkspaceOptions.map((option) => option.id));
+    updateDrafts((current) =>
+      current.every((entry) => listed.has(entry.rootWorkspaceId))
         ? current
-        : current || rootWorkspaceOptions[0]?.id || "",
+        : current.filter((entry) => listed.has(entry.rootWorkspaceId)),
     );
-  }, [rootWorkspaceOptions]);
+  }, [rootWorkspaceOptions, snapshot, updateDrafts]);
 
   useEffect(() => {
     if (!snapshot || !pendingWorkspaceId) {
@@ -444,9 +583,9 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
     if (!nextRootWorkspaceId || !rootWorkspaceOptions.some((w) => w.id === nextRootWorkspaceId)) {
       return;
     }
-    setRootWorkspaceId(nextRootWorkspaceId);
+    openFolderDraft(nextRootWorkspaceId);
     setPendingWorkspaceId("");
-  }, [pendingWorkspaceId, rootWorkspaceOptions, snapshot]);
+  }, [openFolderDraft, pendingWorkspaceId, rootWorkspaceOptions, snapshot]);
 
   useEffect(() => {
     if (!snapshot) {
@@ -457,17 +596,17 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
       previousActiveViewRef.current !== "new-thread" &&
       !openedInAppRef.current
     ) {
-      const nextRootWorkspaceId = resolveRepoWorkspaceId(
-        snapshot.workspaces,
-        selectedWorkspace?.id,
-      );
+      // Main opened New thread itself (a folder was just added, or the app restarted on it).
+      const nextRootWorkspaceId =
+        resolveRepoWorkspaceId(snapshot.workspaces, selectedWorkspace?.id) ??
+        resolveRootWorkspaceId();
       if (nextRootWorkspaceId) {
-        setRootWorkspaceId(nextRootWorkspaceId);
+        openFolderDraft(nextRootWorkspaceId);
       }
     }
     if (snapshot.activeView === "new-thread") openedInAppRef.current = false;
     previousActiveViewRef.current = snapshot.activeView;
-  }, [selectedWorkspace?.id, snapshot]);
+  }, [openFolderDraft, resolveRootWorkspaceId, selectedWorkspace?.id, snapshot]);
 
   return useMemo(
     () => ({
@@ -487,10 +626,13 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
       modelOnboarding,
       slashMenu,
       mentionMenu,
+      drafts,
+      activeDraftId,
+      openDraft,
+      discardDraft,
       setPrompt,
       setEnvironment,
-      setProvider,
-      setModelId,
+      setModel,
       setThinkingLevel,
       setPendingWorkspaceId,
       selectWorkspace,
@@ -502,7 +644,6 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
       handleComposerKeyDown,
       startThread,
       openSurface,
-      resetSurface,
       setComposerError,
     }),
     [
@@ -521,6 +662,14 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
       modelOnboarding,
       slashMenu,
       mentionMenu,
+      drafts,
+      activeDraftId,
+      openDraft,
+      discardDraft,
+      setPrompt,
+      setEnvironment,
+      setModel,
+      setThinkingLevel,
       selectWorkspace,
       addAttachments,
       removeAttachment,
@@ -530,7 +679,38 @@ export function useNewThreadController(params: UseNewThreadControllerParams) {
       handleComposerKeyDown,
       startThread,
       openSurface,
-      resetSurface,
+      setComposerError,
     ],
   );
+}
+
+/** One unsent New thread surface. Model, thinking and flags hold only explicit choices. */
+export interface NewThreadDraft {
+  readonly id: string;
+  readonly rootWorkspaceId: string;
+  readonly environment: NewThreadEnvironment;
+  readonly prompt: string;
+  readonly attachments: readonly ComposerAttachment[];
+  readonly provider?: string;
+  readonly modelId?: string;
+  readonly thinkingLevel?: string;
+  readonly extensionFlagEdits: ExtensionFlagValues;
+  readonly error?: string;
+}
+
+const NO_ATTACHMENTS: readonly ComposerAttachment[] = [];
+
+function createDraft(rootWorkspaceId: string): NewThreadDraft {
+  return {
+    id: crypto.randomUUID(),
+    rootWorkspaceId,
+    environment: "local",
+    prompt: "",
+    attachments: [],
+    extensionFlagEdits: {},
+  };
+}
+
+function isEmptyDraft(draft: NewThreadDraft): boolean {
+  return !draft.prompt.trim() && draft.attachments.length === 0;
 }

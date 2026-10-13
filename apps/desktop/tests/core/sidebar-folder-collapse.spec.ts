@@ -83,6 +83,11 @@ test("folds a folder group from its row and keeps it folded across restart", asy
     await expect(folderRow).toHaveAttribute("aria-expanded", "false");
     await group.getByRole("button", { name: /^New thread in / }).click();
     await expect(folderRow).toHaveAttribute("aria-expanded", "true");
+    // "+" opened a draft, which is folder content too; discard it before emptying the folder.
+    const draft = group.locator(".draft-row");
+    await draft.hover();
+    await draft.getByRole("button", { name: "Discard draft" }).click();
+    await expect(draft).toHaveCount(0);
 
     // A folded folder that has since lost all its threads still opens on "+".
     await folderRow.click();
